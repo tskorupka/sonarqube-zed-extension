@@ -1,0 +1,13 @@
+[package]
+name = "sonarlint-zed"
+version = "0.0.1"
+edition = "2024"
+publish = false
+license = "LGPL-3.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"
+const_format = "0.2"

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example XML file with intentional code quality issues for SonarLint testing -->
+
+<root>
+    <!-- Empty element -->
+    <emptyElement></emptyElement>
+
+    <!-- Duplicate IDs -->
+    <item id="duplicate">Item 1</item>
+    <item id="duplicate">Item 2</item>
+
+    <!-- Missing required attributes -->
+    <image src="logo.png" />
+
+    <!-- Inconsistent naming conventions -->
+    <UserProfile>
+        <FirstName>John</FirstName>
+        <lastname>Doe</lastname>
+        <EMAIL_ADDRESS>john@example.com</EMAIL_ADDRESS>
+    </UserProfile>
+
+    <!-- Deeply nested structure -->
+    <level1>
+        <level2>
+            <level3>
+                <level4>
+                    <level5>
+                        <level6>
+                            <content>Too deeply nested</content>
+                        </level6>
+                    </level5>
+                </level4>
+            </level3>
+        </level2>
+    </level1>
+
+    <!-- Unclosed or self-closing inconsistency -->
+    <item>Content</item>
+    <item />
+
+    <!-- Special characters not escaped -->
+    <description>Value with & and < characters</description>
+
+    <!-- Empty namespace prefix -->
+    <:element>Invalid</:element>
+
+    <!-- Unused namespace declaration -->
+    <container xmlns:unused="http://example.com/unused">
+        <data>Some data</data>
+    </container>
+
+    <!-- Attribute value not quoted (in some parsers) -->
+    <element attribute=value />
+
+    <!-- Whitespace issues -->
+    <items>
+        <item>    Inconsistent spacing    </item>
+            <item>Different indentation</item>
+    </items>
+</root>

@@ -1,0 +1,47 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment variables
+.env
+.env.local
+
+# Rust build artifacts
+/target
+Cargo.lock
+
+# Zed extension output
+extension.wasm
+
+# Node.js (if wrapper dependencies are added)
+node_modules
+package-lock.json
+yarn.lock
+bun.lockb
+
+# Zed Extension CLI
+zed-extension
+/scratch
+/output
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test artifacts
+/test/results
+/test/coverage
+
+# Temporary files
+*.tmp
+*.bak

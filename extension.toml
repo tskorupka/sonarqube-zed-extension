@@ -1,0 +1,48 @@
+id = "sonarlint"
+name = "SonarLint"
+version = "0.0.1"
+schema_version = 1
+authors = ["Tomasz Skorupka<tomaszskorupka94@gmail.com>"]
+description = "SonarLint integration for Zed — real-time static analysis for 18+ languages including Java, JavaScript, TypeScript, Python, PHP, Go, C/C++, C#, Ruby, Kotlin, Scala, HTML, CSS, XML, and YAML."
+repository = "https://github.com/tskorupka/sonarqube-zed-extension"
+
+[language_servers.sonarlint]
+name = "SonarLint"
+languages = [
+    "Java",
+    "JavaScript",
+    "TypeScript",
+    "Terraform",
+    "Python",
+    "PHP",
+    "Go",
+    "HTML",
+    "CSS",
+    "C",
+    "C++",
+    "C#",
+    "Ruby",
+    "Kotlin",
+    "Scala",
+    "XML",
+    "YAML",
+]
+
+[language_servers.sonarlint.language_ids]
+Java = "java"
+JavaScript = "javascript"
+TypeScript = "typescript"
+Terraform = "terraform"
+Python = "python"
+PHP = "php"
+Go = "go"
+HTML = "html"
+CSS = "css"
+C = "c"
+"C++" = "cpp"
+"C#" = "csharp"
+Ruby = "ruby"
+Kotlin = "kotlin"
+Scala = "scala"
+XML = "xml"
+YAML = "yaml"

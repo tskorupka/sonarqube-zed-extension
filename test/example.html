@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Missing viewport meta tag -->
+    <title>Example HTML with Issues</title>
+
+    <!-- Inline styles (bad practice) -->
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+        }
+    </style>
+</head>
+<body>
+    <!-- Missing alt attribute -->
+    <img src="logo.png">
+
+    <!-- Empty heading -->
+    <h1></h1>
+
+    <!-- Deprecated tag -->
+    <center>
+        <font color="red">This uses deprecated tags</font>
+    </center>
+
+    <!-- Invalid heading order -->
+    <h1>Main Title</h1>
+    <h3>Skipped h2</h3>
+
+    <!-- Missing label for input -->
+    <form action="/submit" method="post">
+        <input type="text" name="username">
+        <input type="password" name="password">
+        <button type="submit">Submit</button>
+    </form>
+
+    <!-- Inline event handler (security/maintainability issue) -->
+    <button onclick="alert('clicked')">Click Me</button>
+
+    <!-- Link without rel attribute for external links -->
+    <a href="https://external-site.com">External Link</a>
+
+    <!-- Table without proper accessibility -->
+    <table>
+        <tr>
+            <td>Cell 1</td>
+            <td>Cell 2</td>
+        </tr>
+        <tr>
+            <td>Cell 3</td>
+            <td>Cell 4</td>
+        </tr>
+    </table>
+
+    <!-- Empty div -->
+    <div></div>
+
+    <!-- Duplicate ID -->
+    <div id="container">Content 1</div>
+    <div id="container">Content 2</div>
+
+    <!-- Inline script (security issue) -->
+    <script>
+        var data = "hardcoded";
+        document.write(data);
+    </script>
+</body>
+</html>

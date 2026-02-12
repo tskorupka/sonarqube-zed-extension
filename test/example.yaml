@@ -1,0 +1,78 @@
+# Example YAML file with intentional code quality issues for SonarLint testing
+
+# Duplicate keys
+name: "First Name"
+name: "Second Name"
+
+# Inconsistent indentation
+users:
+  - id: 1
+    name: "User 1"
+     email: "user1@example.com"  # Extra space in indentation
+  - id: 2
+    name: "User 2"
+    email: "user2@example.com"
+
+# Hardcoded credentials
+database:
+  host: localhost
+  port: 5432
+  username: admin
+  password: admin123
+
+# Empty values
+empty_string: ""
+empty_array: []
+empty_object: {}
+
+# Anchors that are never used
+unused_anchor: &unused
+  key: value
+
+# Complex nested structure (too deep)
+level1:
+  level2:
+    level3:
+      level4:
+        level5:
+          level6:
+            level7:
+              data: "Too deeply nested"
+
+# Inconsistent data types
+versions:
+  - 1
+  - "2"
+  - 3.0
+  - "four"
+
+# Trailing spaces after values
+setting1: value1
+setting2: value2
+
+# Tabs mixed with spaces (bad practice)
+mixed_indentation:
+	key1: value1
+  key2: value2
+
+# Undefined references
+reference_example:
+  ref: *nonexistent
+
+# Unsafe type casting
+numbers:
+  - !!int "123"
+  - !!float "abc"
+
+# Very long line
+long_line: "This is a very long line that goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on"
+
+# Commented out code (bad practice)
+# old_setting: value
+# another_old_setting: value2
+
+# Duplicate anchors
+duplicate: &anchor
+  key: value1
+duplicate_ref: &anchor
+  key: value2

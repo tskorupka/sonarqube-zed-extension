@@ -1,0 +1,186 @@
+/* SonarLint CSS Test File */
+/* This file contains intentional violations to test SonarLint rules */
+
+/* Empty rule - should trigger warning */
+.empty-rule {
+}
+
+/* Duplicate properties - should trigger warning */
+.duplicate-properties {
+    color: red;
+    font-size: 14px;
+    color: blue; /* Duplicate property */
+}
+
+/* Unknown vendor prefix without standard property */
+.vendor-prefix-only {
+    -webkit-transform: rotate(45deg);
+    /* Missing standard 'transform' property */
+}
+
+/* Font-family without generic fallback */
+.no-generic-font {
+    font-family: "Arial"; /* Should include generic like 'sans-serif' */
+}
+
+/* Using @import (performance issue) */
+@import url("other-styles.css");
+
+/* ID selector (specificity issue) */
+#myId {
+    background: yellow;
+}
+
+/* Universal selector (performance) */
+* {
+    margin: 0;
+}
+
+/* Invalid color value */
+.invalid-color {
+    color: #fff000000; /* Invalid hex color */
+    background: rgba(255, 0, 0, 1.5); /* Alpha out of range */
+}
+
+/* Shorthand property overridden by longhand */
+.shorthand-overridden {
+    background: white;
+    background-color: black; /* Overwrites shorthand */
+}
+
+/* Unknown property */
+.unknown-property {
+    colr: red; /* Typo: should be 'color' */
+    text-align: centre; /* Typo: should be 'center' */
+}
+
+/* Qualified universal selector */
+div * {
+    padding: 10px;
+}
+
+/* Too many font-size declarations (maintainability) */
+h1 {
+    font-size: 24px;
+}
+h2 {
+    font-size: 22px;
+}
+h3 {
+    font-size: 20px;
+}
+h4 {
+    font-size: 18px;
+}
+h5 {
+    font-size: 16px;
+}
+h6 {
+    font-size: 14px;
+}
+.title {
+    font-size: 26px;
+}
+.subtitle {
+    font-size: 20px;
+}
+.small-text {
+    font-size: 12px;
+}
+.tiny-text {
+    font-size: 10px;
+}
+
+/* !important overuse */
+.important-spam {
+    color: red !important;
+    background: blue !important;
+    font-size: 16px !important;
+    padding: 10px !important;
+}
+
+/* Box-model without box-sizing */
+.fixed-width {
+    width: 200px;
+    padding: 20px;
+    border: 1px solid black;
+    /* Total width will be 242px, not 200px */
+}
+
+/* Missing units (except 0) */
+.missing-units {
+    width: 100; /* Should be 100px or 100% */
+    height: 200; /* Should have unit */
+    margin: 0; /* This is OK */
+}
+
+/* Over-qualified selectors */
+ul.nav {
+    list-style: none;
+}
+
+div.container {
+    width: 100%;
+}
+
+/* Using outline: none without alternative focus indicator */
+button:focus {
+    outline: none; /* Accessibility issue */
+}
+
+/* Low contrast text (accessibility) */
+.low-contrast {
+    color: #ccc;
+    background: #fff;
+}
+
+/* Deprecated property */
+.deprecated {
+    clip: rect(10px, 100px, 100px, 10px); /* Deprecated, use clip-path */
+}
+
+/* Vendor prefixes in wrong order */
+.wrong-order-prefixes {
+    transform: rotate(45deg);
+    -webkit-transform: rotate(45deg); /* Should come before standard */
+    -moz-transform: rotate(45deg);
+}
+
+/* Selector max depth (overly specific) */
+.container .header .nav .menu .item .link .icon {
+    color: red;
+}
+
+/* Magic numbers without explanation */
+.magic-numbers {
+    margin-top: 37px; /* Why 37? */
+    padding-left: 23px; /* Why 23? */
+    width: 347px; /* Why 347? */
+}
+
+/* Unnecessary universal selector */
+.container > * {
+    display: block;
+}
+
+/* Float without clearfix */
+.float-parent {
+    /* No clearfix mechanism */
+}
+
+.float-child {
+    float: left;
+    width: 50%;
+}
+
+/* Missing fallback for custom properties */
+.custom-props {
+    color: var(--primary-color); /* No fallback value */
+    background: var(--bg-color); /* No fallback */
+}
+
+/* Trailing semicolon missing in last property (some linters flag this) */
+.no-trailing-semicolon {
+    color: red;
+    background: blue;
+}
