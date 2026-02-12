@@ -12,6 +12,7 @@ languages = [
     "Java",
     "JavaScript",
     "TypeScript",
+    "TSX",
     "Terraform",
     "Python",
     "PHP",
@@ -32,6 +33,7 @@ languages = [
 Java = "java"
 JavaScript = "javascript"
 TypeScript = "typescript"
+TSX = "typescriptreact"
 Terraform = "terraform"
 Python = "python"
 PHP = "php"

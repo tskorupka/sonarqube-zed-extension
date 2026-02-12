@@ -35,7 +35,11 @@
  *   - sonarlint/filterOutExcludedFiles → pass through (no filtering)
  *   - sonarlint/getJavaConfig          → null (no special java config)
  *   - sonarlint/canShowMissingRequirementsNotification → "silently" (don't show)
+ *   - sonarlint/hasJoinedIdeLabs       → false (not in experimental program)
  *   - workspace/configuration          → return stored config
+ *
+ * Custom notifications handled:
+ *   - sonarlint/showRuleDescription → display rule details to user
  *
  * Custom notifications silently ignored:
  *   - sonarlint/submitNewCodeDefinition
@@ -46,7 +50,6 @@
  *   - sonarlint/showSonarLintOutput
  *   - sonarlint/openJavaHomeSettings
  *   - sonarlint/readyForTests
- *   - sonarlint/showRuleDescription
  *   - sonarlint/needCompilationDatabase
  */
 
@@ -389,9 +392,15 @@ new LspMessageReader(serverProcess.stdout, (msg) => {
     }
   }
 
-  if (msg.method && !msg.id && isIgnoredNotification(msg.method)) {
-    log("Dropping notification:", msg.method);
-    return;
+  if (msg.method && !msg.id) {
+    if (handleServerNotification(msg)) {
+      log("✓ Handled notification:", msg.method);
+      return;
+    }
+    if (isIgnoredNotification(msg.method)) {
+      log("Dropping notification:", msg.method);
+      return;
+    }
   }
 
   if (msg.method) {
@@ -557,6 +566,12 @@ function handleServerRequest(msg) {
               disableTelemetry: true,
               output: { showVerboseLogs: false },
               pathToNodeExecutable: "",
+              connectedMode: {
+                connections: {
+                  sonarqube: [],
+                  sonarcloud: [],
+                },
+              },
             };
           case "files.exclude":
             // VSCode format: pattern → boolean
@@ -604,6 +619,56 @@ function handleServerRequest(msg) {
       return true;
     }
 
+    case "sonarlint/hasJoinedIdeLabs": {
+      // IDE Labs is SonarLint's experimental features program
+      // Return false to indicate user hasn't joined
+      log("→ hasJoinedIdeLabs");
+      sendToServer({
+        jsonrpc: "2.0",
+        id,
+        result: false,
+      });
+      return true;
+    }
+
+    case "window/workDoneProgress/create": {
+      // Standard LSP request to create a progress token
+      // Return success even if Zed doesn't fully support it
+      log("→ workDoneProgress/create:", JSON.stringify(params));
+      sendToServer({
+        jsonrpc: "2.0",
+        id,
+        result: null,
+      });
+      return true;
+    }
+
+    case "sonarlint/checkConnection": {
+      // Return failure for connection checks (we're in standalone mode)
+      log("→ checkConnection");
+      sendToServer({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          success: false,
+          reason: "Standalone mode - no connections configured",
+        },
+      });
+      return true;
+    }
+
+    case "sonarlint/getCredentials":
+    case "sonarlint/validateConnection": {
+      // Decline credential/validation requests
+      log("→", method);
+      sendToServer({
+        jsonrpc: "2.0",
+        id,
+        result: null,
+      });
+      return true;
+    }
+
     default:
       // Unknown request — handle it ourselves instead of forwarding to Zed
       // because Zed will return an error for any custom request it doesn't understand
@@ -614,6 +679,62 @@ function handleServerRequest(msg) {
         result: null,
       });
       return true;
+  }
+}
+
+/**
+ * Handles server notifications that need special processing.
+ * Returns true if handled, false to pass through or ignore.
+ */
+function handleServerNotification(msg) {
+  const { method, params } = msg;
+
+  switch (method) {
+    case "sonarlint/showRuleDescription": {
+      // Transform SonarLint rule description into a user-friendly message
+      log("→ showRuleDescription:", JSON.stringify(params));
+
+      const ruleKey = params?.ruleKey || params?.key || "unknown";
+      const name = params?.name || ruleKey;
+      const htmlDescription =
+        params?.htmlDescription || params?.description || "";
+      const severity = params?.severity || params?.type || "";
+      const languageKey = params?.languageKey || "";
+
+      // Strip HTML tags for plain text preview
+      const plainDescription = htmlDescription
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const maxLength = 500;
+      const truncatedDesc =
+        plainDescription.length > maxLength
+          ? plainDescription.substring(0, maxLength) + "..."
+          : plainDescription;
+
+      // Build a formatted message
+      let message = `SonarLint Rule: ${name}\n`;
+      message += `Key: ${ruleKey}\n`;
+      if (severity) message += `Severity: ${severity}\n`;
+      if (languageKey) message += `Language: ${languageKey}\n`;
+      message += `\n${truncatedDesc}`;
+
+      // Send as a window/showMessage to display in Zed
+      sendToClient({
+        jsonrpc: "2.0",
+        method: "window/showMessage",
+        params: {
+          type: 3, // Info
+          message: message,
+        },
+      });
+
+      return true;
+    }
+
+    default:
+      return false;
   }
 }
 
@@ -631,7 +752,6 @@ function isIgnoredNotification(method) {
     "sonarlint/openJavaHomeSettings",
     "sonarlint/readyForTests",
     "sonarlint/needCompilationDatabase",
-    "sonarlint/showRuleDescription",
     "sonarlint/showHotspot",
     "sonarlint/showIssueOrHotspot",
     "sonarlint/showSoonUnsupportedVersionMessage",
@@ -640,10 +760,14 @@ function isIgnoredNotification(method) {
   return IGNORED.has(method);
 }
 
-// ─── Send response back to sonarlint-ls ──────────────────────────────────────
+// ─── Send messages ───────────────────────────────────────────────────────────
 
 function sendToServer(msg) {
   serverProcess.stdin.write(encodeLspMessage(msg));
+}
+
+function sendToClient(msg) {
+  process.stdout.write(encodeLspMessage(msg));
 }
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────

@@ -242,6 +242,9 @@ impl zed::Extension for SonarLintExtension {
             "productVersion": "0.1.0",
             "showVerboseLogs": false,
             "disableTelemetry": true,
+            "connectedModeEmbedded": {
+                "shouldManageServerLifetime": false
+            },
             "additionalAttributes": {}
         });
 
