@@ -24,6 +24,7 @@ use zed_extension_api::{
 
 const SONARLINT_VSCODE_REPO: &str = "SonarSource/sonarlint-vscode";
 const SONARLINT_VERSION: &str = "4.42.0";
+const SONARLINT_TAG: &str = concatcp!(SONARLINT_VERSION, "+79846");
 const SONARLINT_ASSET_NAME: &str = concatcp!("sonarlint-vscode-", SONARLINT_VERSION, ".vsix");
 
 const SERVER_NAME: &str = "sonarlint-ls.jar";
@@ -54,13 +55,10 @@ impl SonarLintExtension {
             &zed::LanguageServerInstallationStatus::CheckingForUpdate,
         );
 
-        let release = zed::latest_github_release(
-            SONARLINT_VSCODE_REPO,
-            zed::GithubReleaseOptions {
-                require_assets: true,
-                pre_release: false,
-            },
-        )?;
+        let release = zed::github_release_by_tag_name(SONARLINT_VSCODE_REPO, SONARLINT_TAG)
+            .map_err(|e| {
+                format!("Failed to find SonarLint release for tag '{SONARLINT_TAG}': {e}")
+            })?;
 
         let asset = release
             .assets
@@ -68,7 +66,7 @@ impl SonarLintExtension {
             .find(|a| a.name == SONARLINT_ASSET_NAME)
             .ok_or_else(|| {
                 format!(
-                    "Could not find asset '{SONARLINT_ASSET_NAME}' in SonarLint release. \
+                    "Asset '{SONARLINT_ASSET_NAME}' not found in release '{SONARLINT_TAG}'. \
                      Available assets: {:?}",
                     release.assets.iter().map(|a| &a.name).collect::<Vec<_>>()
                 )
@@ -84,7 +82,7 @@ impl SonarLintExtension {
             SERVER_INSTALL_DIR,
             zed::DownloadedFileType::Zip,
         )
-        .map_err(|e| format!("Failed to download SonarLint: {e}"))?;
+        .map_err(|e| format!("Failed to download SonarLint v{SONARLINT_VERSION}: {e}"))?;
 
         if fs::metadata(SERVER_PATH).is_err() {
             return Err(format!(
