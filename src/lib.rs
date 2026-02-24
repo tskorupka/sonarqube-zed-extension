@@ -230,9 +230,11 @@ impl zed::Extension for SonarLintExtension {
         language_server_id: &LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<Option<serde_json::Value>> {
-        let user_settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
-            .ok()
-            .and_then(|s| s.initialization_options);
+        let lsp_settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree).ok();
+        let user_init_opts = lsp_settings
+            .as_ref()
+            .and_then(|s| s.initialization_options.clone());
+        let user_ws_settings = lsp_settings.as_ref().and_then(|s| s.settings.clone());
 
         let mut options = serde_json::json!({
             "productKey": "zed",
@@ -246,7 +248,20 @@ impl zed::Extension for SonarLintExtension {
             "additionalAttributes": {}
         });
 
-        if let Some(user_opts) = user_settings {
+        // Extract connections from workspace settings for initializationOptions.
+        // The LS expects connections at startup to register them.
+        // Settings structure: { "connectedMode": { "connections": { "sonarqube": [...], "sonarcloud": [...] } } }
+        if let Some(ref settings) = user_ws_settings {
+            if let Some(connections) = settings
+                .get("connectedMode")
+                .and_then(|cm| cm.get("connections"))
+            {
+                options["connections"] = connections.clone();
+            }
+        }
+
+        // Merge user initialization options (these take precedence)
+        if let Some(user_opts) = user_init_opts {
             if let (Some(base), Some(overrides)) = (options.as_object_mut(), user_opts.as_object())
             {
                 for (key, value) in overrides {

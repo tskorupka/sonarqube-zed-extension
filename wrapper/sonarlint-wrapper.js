@@ -36,17 +36,25 @@
  *   - sonarlint/getJavaConfig          → null (no special java config)
  *   - sonarlint/canShowMissingRequirementsNotification → "silently" (don't show)
  *   - sonarlint/hasJoinedIdeLabs       → false (not in experimental program)
- *   - workspace/configuration          → return stored config
+ *   - sonarlint/getTokenForServer      → return token from connection config
+ *   - sonarlint/checkConnection        → success if connections configured
+ *   - workspace/configuration          → return stored config merged with defaults;
+ *                                        auto-binds from .sonarlint/connectedMode.json per scope
  *
  * Custom notifications handled:
- *   - sonarlint/showRuleDescription → display rule details to user
+ *   - sonarlint/showRuleDescription              → display rule details to user
+ *   - sonarlint/suggestBinding                   → log binding suggestions
+ *   - sonarlint/suggestConnection                → log connection suggestions
+ *   - sonarlint/notifyInvalidToken               → warn user about expired token
+ *   - sonarlint/reportConnectionCheckResult      → log connection status
+ *   - sonarlint/openConnectionSettings           → show config instructions
+ *   - sonarlint/removeBindingsForDeletedConnections → log cleanup request
+ *   - sonarlint/setReferenceBranchNameForFolder  → log reference branch
  *
  * Custom notifications silently ignored:
  *   - sonarlint/submitNewCodeDefinition
  *   - sonarlint/embeddedServerStarted
  *   - sonarlint/settingsApplied
- *   - sonarlint/suggestBinding
- *   - sonarlint/suggestConnection
  *   - sonarlint/showSonarLintOutput
  *   - sonarlint/openJavaHomeSettings
  *   - sonarlint/readyForTests
@@ -269,6 +277,7 @@ function listFilesInFolder(folderUri) {
     ".hg",
     "dist",
     "build",
+    "out",
     ".next",
     ".nuxt",
     "__pycache__",
@@ -296,7 +305,10 @@ function listFilesInFolder(folderUri) {
       if (results.length >= MAX_FILES) break;
 
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith(".")) {
+        if (
+          !SKIP_DIRS.has(entry.name) &&
+          (!entry.name.startsWith(".") || entry.name === ".sonarlint")
+        ) {
           walk(path.join(dir, entry.name), depth + 1);
         }
       } else if (entry.isFile()) {
@@ -315,7 +327,7 @@ function listFilesInFolder(folderUri) {
 
 // ─── Spawn SonarLint Language Server ─────────────────────────────────────────
 
-const javaArgs = ["-Xmx512m", "-Xms128m", "-jar", SERVER_JAR, "-stdio"];
+const javaArgs = ["-Xmx1024m", "-Xms128m", "-jar", SERVER_JAR, "-stdio"];
 
 if (ANALYZERS.length > 0) {
   javaArgs.push("-analyzers");
@@ -357,6 +369,239 @@ serverProcess.stderr.on("data", (chunk) => {
 
 let storedConfig = null; // Configuration from didChangeConfiguration
 let workspaceFolders = []; // From initialize request
+let connectionConfigs = { sonarqube: [], sonarcloud: [] }; // Connections with tokens
+let serverInitialized = false; // Whether the LS has been initialized
+let sharedConfigs = {}; // folderUri → parsed .sonarlint/connectedMode.json
+let bindingNotificationSent = false; // Only send addedManualBindings once
+
+// ─── Connected Mode helpers ──────────────────────────────────────────────────
+
+/**
+ * Store connection configurations (with tokens) for serving sonarlint/getTokenForServer.
+ */
+function captureConnections(connections) {
+  if (!connections) return;
+  connectionConfigs = {
+    sonarqube: (connections.sonarqube || []).map((c) => ({ ...c })),
+    sonarcloud: (connections.sonarcloud || []).map((c) => ({ ...c })),
+  };
+  const sqCount = connectionConfigs.sonarqube.length;
+  const scCount = connectionConfigs.sonarcloud.length;
+  log(`Captured connections: ${sqCount} SonarQube, ${scCount} SonarCloud`);
+}
+
+/**
+ * Normalize a URL for comparison: lowercase, strip trailing slashes.
+ */
+function normalizeUrl(url) {
+  if (!url) return "";
+  return url.toLowerCase().replace(/\/+$/, "");
+}
+
+/**
+ * Find a token for a given server ID.
+ * For SonarQube, serverId is the serverUrl or connectionId.
+ * For SonarCloud, serverId is a region-prefixed organizationKey (e.g. "EU_myorg") or connectionId.
+ * Tries exact match first, then normalized URL match.
+ */
+function findTokenForServer(serverId) {
+  if (!serverId) return null;
+  const normalizedId = normalizeUrl(serverId);
+
+  // Strip region prefix (e.g. "EU_myorg" → "myorg") for SonarCloud matching.
+  // The LS sends region-prefixed IDs like "EU_orgkey" but users may configure
+  // connectionId or organizationKey without the region prefix.
+  const strippedId = serverId.replace(/^[A-Z]{2}_/, "");
+
+  for (const conn of connectionConfigs.sonarqube || []) {
+    if (
+      conn.connectionId === serverId ||
+      conn.serverUrl === serverId ||
+      normalizeUrl(conn.serverUrl) === normalizedId ||
+      normalizeUrl(conn.connectionId) === normalizedId
+    ) {
+      return conn.token || null;
+    }
+  }
+  for (const conn of connectionConfigs.sonarcloud || []) {
+    const regionPrefix = conn.region ? `${conn.region}_` : "";
+    const key = regionPrefix + (conn.organizationKey || "");
+    if (
+      key === serverId ||
+      conn.organizationKey === serverId ||
+      conn.connectionId === serverId ||
+      conn.organizationKey === strippedId ||
+      conn.connectionId === strippedId
+    ) {
+      return conn.token || null;
+    }
+  }
+  return null;
+}
+
+function hasConnections() {
+  return (
+    (connectionConfigs.sonarqube?.length || 0) > 0 ||
+    (connectionConfigs.sonarcloud?.length || 0) > 0
+  );
+}
+
+/**
+ * Deep merge two objects. Arrays and non-object values from source overwrite target.
+ */
+function deepMerge(target, source) {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (
+      source[key] &&
+      typeof source[key] === "object" &&
+      !Array.isArray(source[key]) &&
+      target[key] &&
+      typeof target[key] === "object" &&
+      !Array.isArray(target[key])
+    ) {
+      result[key] = deepMerge(target[key], source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
+/**
+ * Convert a file:// URI to a filesystem path.
+ */
+function uriToPath(uri) {
+  if (uri && uri.startsWith("file://")) {
+    return decodeURIComponent(uri.replace("file://", ""));
+  }
+  return uri;
+}
+
+/**
+ * Read .sonarlint/connectedMode.json from a folder.
+ * Returns the parsed JSON or null if not found.
+ */
+function readSharedConnectedModeConfig(folderPath) {
+  const configPath = path.join(folderPath, ".sonarlint", "connectedMode.json");
+  try {
+    const content = fs.readFileSync(configPath, "utf-8");
+    const config = JSON.parse(content);
+    log("Read shared config from", configPath, ":", JSON.stringify(config));
+    return config;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load .sonarlint/connectedMode.json from all workspace folders.
+ */
+function loadSharedConfigs() {
+  for (const folder of workspaceFolders) {
+    const folderPath = uriToPath(folder.uri);
+    if (!folderPath) continue;
+    const config = readSharedConnectedModeConfig(folderPath);
+    if (config) {
+      sharedConfigs[folder.uri] = config;
+    }
+  }
+  const count = Object.keys(sharedConfigs).length;
+  if (count > 0) {
+    log(`Loaded ${count} shared connected mode config(s)`);
+  }
+}
+
+/**
+ * Match a .sonarlint/connectedMode.json config to a configured connection.
+ * Returns the connectionId if a match is found, null otherwise.
+ */
+function matchConnectionForSharedConfig(sharedConfig) {
+  if (sharedConfig.sonarQubeUri) {
+    // Normalize: strip trailing slash for comparison
+    const uri = sharedConfig.sonarQubeUri.replace(/\/+$/, "");
+    for (const conn of connectionConfigs.sonarqube || []) {
+      const connUrl = (conn.serverUrl || "").replace(/\/+$/, "");
+      if (connUrl === uri) {
+        return conn.connectionId || conn.serverUrl;
+      }
+    }
+  }
+  if (sharedConfig.sonarCloudOrganization) {
+    for (const conn of connectionConfigs.sonarcloud || []) {
+      if (conn.organizationKey === sharedConfig.sonarCloudOrganization) {
+        return conn.connectionId || conn.organizationKey;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Find shared config for a given scope URI.
+ * Tries exact match first, then finds the best matching workspace folder.
+ */
+function findSharedConfigForScope(scopeUri) {
+  if (!scopeUri) {
+    // No scope — return first available shared config
+    const uris = Object.keys(sharedConfigs);
+    return uris.length > 0 ? sharedConfigs[uris[0]] : null;
+  }
+  // Exact match
+  if (sharedConfigs[scopeUri]) {
+    return sharedConfigs[scopeUri];
+  }
+  // Find the workspace folder whose URI is a prefix of scopeUri
+  for (const [folderUri, config] of Object.entries(sharedConfigs)) {
+    if (scopeUri.startsWith(folderUri)) {
+      return config;
+    }
+  }
+  return null;
+}
+
+/**
+ * Qualify a project key for SonarCloud connections.
+ * SonarCloud project keys must be in the format "<organizationKey>_<projectKey>".
+ * If the connection is SonarCloud and the project key doesn't already have the org prefix,
+ * prepend it automatically.
+ * Returns the (possibly prefixed) project key.
+ */
+function qualifyProjectKey(connectionId, projectKey) {
+  if (!connectionId || !projectKey) return projectKey;
+
+  // Find the matching SonarCloud connection
+  for (const conn of connectionConfigs.sonarcloud || []) {
+    const connId = conn.connectionId || conn.organizationKey;
+    if (connId === connectionId && conn.organizationKey) {
+      const prefix = conn.organizationKey + "_";
+      if (!projectKey.startsWith(prefix)) {
+        const qualified = prefix + projectKey;
+        log(`Qualified SonarCloud project key: "${projectKey}" → "${qualified}"`);
+        return qualified;
+      }
+      break;
+    }
+  }
+
+  return projectKey;
+}
+
+/**
+ * Return a copy of sonarlint config with tokens stripped from connections.
+ */
+function stripTokensFromConfig(config) {
+  if (!config?.connectedMode?.connections) return config;
+  const cleaned = JSON.parse(JSON.stringify(config));
+  for (const arr of Object.values(cleaned.connectedMode.connections)) {
+    if (Array.isArray(arr)) {
+      for (const conn of arr) {
+        delete conn.token;
+      }
+    }
+  }
+  return cleaned;
+}
 
 // ─── Handle messages from Zed (client → server) ─────────────────────────────
 
@@ -370,11 +615,49 @@ new LspMessageReader(process.stdin, (msg) => {
       workspaceFolders = [{ uri: msg.params.rootUri, name: "root" }];
     }
     log("Workspace folders:", JSON.stringify(workspaceFolders));
+
+    // Capture connections (with tokens) for serving sonarlint/getTokenForServer
+    if (msg.params.initializationOptions?.connections) {
+      captureConnections(msg.params.initializationOptions.connections);
+    }
+  }
+
+  if (msg.method === "initialized") {
+    serverInitialized = true;
+    log("Server initialized");
+
+    // Load .sonarlint/connectedMode.json from workspace folders
+    loadSharedConfigs();
   }
 
   if (msg.method === "workspace/didChangeConfiguration" && msg.params) {
     storedConfig = msg.params.settings || msg.params;
     log("Stored configuration");
+
+    // Also capture connections from settings (may arrive after init)
+    if (storedConfig?.connectedMode?.connections) {
+      captureConnections(storedConfig.connectedMode.connections);
+    }
+
+    // Notify the LS about bindings once after first config is received
+    if (serverInitialized && !bindingNotificationSent) {
+      const hasExplicitBinding =
+        !!storedConfig?.connectedMode?.project?.projectKey;
+      const hasSharedBinding = Object.values(sharedConfigs).some(
+        (sc) => sc.projectKey && matchConnectionForSharedConfig(sc),
+      );
+      if (hasExplicitBinding || hasSharedBinding) {
+        bindingNotificationSent = true;
+        setTimeout(() => {
+          sendToServer({
+            jsonrpc: "2.0",
+            method: "sonarlint/addedManualBindings",
+            params: null,
+          });
+          log("Sent addedManualBindings notification");
+        }, 500);
+      }
+    }
   }
 
   serverProcess.stdin.write(encodeLspMessage(msg));
@@ -549,30 +832,88 @@ function handleServerRequest(msg) {
       // Return stored configuration or defaults
       log("→ workspace/configuration:", JSON.stringify(params));
 
+      const sonarlintDefaults = {
+        rules: {},
+        disableTelemetry: true,
+        output: { showVerboseLogs: false },
+        pathToNodeExecutable: "",
+        connectedMode: {
+          connections: {
+            sonarqube: [],
+            sonarcloud: [],
+          },
+        },
+      };
+
       const items = params?.items || [];
       const results = items.map((item) => {
         const section = item.section || "";
 
-        // Check stored config first
+        // For the "sonarlint" section, storedConfig IS the sonarlint config
+        // (Zed sends settings from lsp.sonarlint.settings directly)
+        if (section === "sonarlint") {
+          let config;
+          if (storedConfig) {
+            config = deepMerge(sonarlintDefaults, storedConfig);
+          } else {
+            config = { ...sonarlintDefaults };
+          }
+
+          // Qualify project key for SonarCloud connections
+          if (config.connectedMode?.project?.projectKey) {
+            config.connectedMode.project.projectKey = qualifyProjectKey(
+              config.connectedMode.project.connectionId,
+              config.connectedMode.project.projectKey,
+            );
+          }
+
+          // If no explicit project binding, check .sonarlint/connectedMode.json
+          if (!config.connectedMode?.project?.projectKey) {
+            const sharedConfig = findSharedConfigForScope(item.scopeUri);
+            if (sharedConfig?.projectKey) {
+              const connectionId =
+                matchConnectionForSharedConfig(sharedConfig);
+              if (connectionId) {
+                config.connectedMode = config.connectedMode || {};
+                config.connectedMode.project = {
+                  connectionId,
+                  projectKey: qualifyProjectKey(connectionId, sharedConfig.projectKey),
+                };
+                log(
+                  `Auto-bound scope ${item.scopeUri || "(default)"} to connection=${connectionId} project=${config.connectedMode.project.projectKey} from shared config`,
+                );
+              }
+            }
+          }
+
+          return stripTokensFromConfig(config);
+        }
+
+        // For sonarlint sub-sections (e.g. "sonarlint.rules"), extract from storedConfig
+        if (section.startsWith("sonarlint.") && storedConfig) {
+          const subKey = section.slice("sonarlint.".length);
+          const parts = subKey.split(".");
+          let value = storedConfig;
+          for (const part of parts) {
+            if (value && typeof value === "object") {
+              value = value[part];
+            } else {
+              value = undefined;
+              break;
+            }
+          }
+          if (value !== undefined) {
+            return value;
+          }
+        }
+
+        // Check stored config for non-sonarlint sections
         if (storedConfig && storedConfig[section] !== undefined) {
           return storedConfig[section];
         }
 
         // Return appropriate defaults for each known section
         switch (section) {
-          case "sonarlint":
-            return {
-              rules: {},
-              disableTelemetry: true,
-              output: { showVerboseLogs: false },
-              pathToNodeExecutable: "",
-              connectedMode: {
-                connections: {
-                  sonarqube: [],
-                  sonarcloud: [],
-                },
-              },
-            };
           case "files.exclude":
             // VSCode format: pattern → boolean
             return {
@@ -643,28 +984,81 @@ function handleServerRequest(msg) {
       return true;
     }
 
-    case "sonarlint/checkConnection": {
-      // Return failure for connection checks (we're in standalone mode)
-      log("→ checkConnection");
+    case "sonarlint/getTokenForServer": {
+      // LS requests a token for a server connection.
+      // params can be a raw string, or an object with serverUrl/serverId/connectionId.
+      log("→ getTokenForServer raw params:", JSON.stringify(params));
+      const serverId =
+        typeof params === "string"
+          ? params
+          : params?.serverUrl ||
+            params?.serverId ||
+            params?.connectionId ||
+            (Array.isArray(params) ? params[0] : null);
+      log("→ getTokenForServer resolved serverId:", serverId);
+      const token = findTokenForServer(serverId);
+      if (token) {
+        log("→ getTokenForServer: found token for", serverId);
+      } else {
+        log(
+          "→ getTokenForServer: no token found for",
+          serverId,
+          "| known connections:",
+          JSON.stringify(
+            (connectionConfigs.sonarqube || [])
+              .map((c) => c.connectionId || c.serverUrl)
+              .concat(
+                (connectionConfigs.sonarcloud || []).map(
+                  (c) => c.connectionId || c.organizationKey,
+                ),
+              ),
+          ),
+        );
+      }
       sendToServer({
         jsonrpc: "2.0",
         id,
-        result: {
-          success: false,
-          reason: "Standalone mode - no connections configured",
-        },
+        result: token || null,
       });
+      return true;
+    }
+
+    case "sonarlint/checkConnection": {
+      // If connections are configured, let the LS handle validation
+      if (hasConnections()) {
+        log("→ checkConnection: connections configured, returning success");
+        sendToServer({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            success: true,
+          },
+        });
+      } else {
+        log("→ checkConnection: no connections configured");
+        sendToServer({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            success: false,
+            reason: "No connections configured",
+          },
+        });
+      }
       return true;
     }
 
     case "sonarlint/getCredentials":
     case "sonarlint/validateConnection": {
-      // Decline credential/validation requests
+      // Return token if available, null otherwise
       log("→", method);
+      const credServerId =
+        typeof params === "string" ? params : params?.connectionId;
+      const credToken = credServerId ? findTokenForServer(credServerId) : null;
       sendToServer({
         jsonrpc: "2.0",
         id,
-        result: null,
+        result: credToken ? { token: credToken } : null,
       });
       return true;
     }
@@ -733,6 +1127,134 @@ function handleServerNotification(msg) {
       return true;
     }
 
+    case "sonarlint/suggestBinding": {
+      // Log binding suggestions so the user can configure manually
+      log("→ suggestBinding:", JSON.stringify(params));
+      const suggestions = params?.suggestions || {};
+      for (const [folderUri, bindings] of Object.entries(suggestions)) {
+        for (const binding of bindings || []) {
+          log(
+            `  Binding suggestion for ${folderUri}: connection=${binding.connectionId} project=${binding.sonarProjectKey} (${binding.sonarProjectName})`,
+          );
+          sendToClient({
+            jsonrpc: "2.0",
+            method: "window/logMessage",
+            params: {
+              type: 3, // Info
+              message: `SonarLint: Binding suggestion - project "${binding.sonarProjectName}" (${binding.sonarProjectKey}) on connection "${binding.connectionId}". Configure in settings: "connectedMode.project": { "connectionId": "${binding.connectionId}", "projectKey": "${binding.sonarProjectKey}" }`,
+            },
+          });
+        }
+      }
+      return true;
+    }
+
+    case "sonarlint/suggestConnection": {
+      // Log connection suggestions so the user can configure manually
+      log("→ suggestConnection:", JSON.stringify(params));
+      const suggestionsByScope =
+        params?.suggestionsByConfigScopeId || params?.suggestions || {};
+      for (const [scopeId, suggestions] of Object.entries(
+        suggestionsByScope,
+      )) {
+        for (const suggestion of suggestions || []) {
+          const conn = suggestion.connectionSuggestion || suggestion;
+          const target = conn.serverUrl || conn.organization || "unknown";
+          log(
+            `  Connection suggestion for ${scopeId}: ${target} project=${conn.projectKey}`,
+          );
+          sendToClient({
+            jsonrpc: "2.0",
+            method: "window/logMessage",
+            params: {
+              type: 3, // Info
+              message: `SonarLint: Connection suggestion for ${target} - project "${conn.projectKey}". Add connection in Zed settings under "connectedMode.connections".`,
+            },
+          });
+        }
+      }
+      return true;
+    }
+
+    case "sonarlint/notifyInvalidToken": {
+      // Warn user about invalid/expired token
+      const connectionId = params?.connectionId || "unknown";
+      log("→ notifyInvalidToken:", connectionId);
+      sendToClient({
+        jsonrpc: "2.0",
+        method: "window/showMessage",
+        params: {
+          type: 1, // Error
+          message: `SonarLint: Token for connection "${connectionId}" is invalid or expired. Please update the token in your Zed settings under "connectedMode.connections".`,
+        },
+      });
+      return true;
+    }
+
+    case "sonarlint/reportConnectionCheckResult": {
+      // Log connection check results
+      const connId = params?.connectionId || "unknown";
+      const success = params?.success;
+      const reason = params?.reason || "";
+      log(
+        `→ reportConnectionCheckResult: ${connId} success=${success} reason=${reason}`,
+      );
+      if (!success) {
+        sendToClient({
+          jsonrpc: "2.0",
+          method: "window/showMessage",
+          params: {
+            type: 2, // Warning
+            message: `SonarLint: Connection "${connId}" check failed${reason ? ": " + reason : ""}. Verify your server URL and token in settings.`,
+          },
+        });
+      }
+      return true;
+    }
+
+    case "sonarlint/openConnectionSettings": {
+      // Log instruction for the user
+      const isSonarCloud = params === true;
+      log("→ openConnectionSettings: isSonarCloud=" + isSonarCloud);
+      sendToClient({
+        jsonrpc: "2.0",
+        method: "window/showMessage",
+        params: {
+          type: 3, // Info
+          message: `SonarLint: To configure a ${isSonarCloud ? "SonarCloud" : "SonarQube"} connection, add it to your Zed settings under lsp.sonarlint.settings.connectedMode.connections.`,
+        },
+      });
+      return true;
+    }
+
+    case "sonarlint/removeBindingsForDeletedConnections": {
+      // Log cleanup request
+      const connectionIds = params || [];
+      log(
+        "→ removeBindingsForDeletedConnections:",
+        JSON.stringify(connectionIds),
+      );
+      if (connectionIds.length > 0) {
+        sendToClient({
+          jsonrpc: "2.0",
+          method: "window/logMessage",
+          params: {
+            type: 2, // Warning
+            message: `SonarLint: Connections removed: ${connectionIds.join(", ")}. Please update your project bindings in settings.`,
+          },
+        });
+      }
+      return true;
+    }
+
+    case "sonarlint/setReferenceBranchNameForFolder": {
+      // Log the reference branch for connected mode
+      const folderUri = params?.folderUri || "unknown";
+      const branchName = params?.branchName || "none";
+      log(`→ setReferenceBranchNameForFolder: ${folderUri} → ${branchName}`);
+      return true;
+    }
+
     default:
       return false;
   }
@@ -746,8 +1268,6 @@ function isIgnoredNotification(method) {
     "sonarlint/submitNewCodeDefinition",
     "sonarlint/embeddedServerStarted",
     "sonarlint/settingsApplied",
-    "sonarlint/suggestBinding",
-    "sonarlint/suggestConnection",
     "sonarlint/showSonarLintOutput",
     "sonarlint/openJavaHomeSettings",
     "sonarlint/readyForTests",
@@ -755,7 +1275,6 @@ function isIgnoredNotification(method) {
     "sonarlint/showHotspot",
     "sonarlint/showIssueOrHotspot",
     "sonarlint/showSoonUnsupportedVersionMessage",
-    "sonarlint/reportConnectionCheckResult",
   ]);
   return IGNORED.has(method);
 }

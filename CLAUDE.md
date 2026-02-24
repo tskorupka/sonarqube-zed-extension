@@ -60,7 +60,7 @@ zed --foreground
   - `SONARLINT_ANALYZER_PATHS`: pipe-separated list of analyzer JARs
   - `JAVA_HOME`: forwarded from shell environment
   - `SONARLINT_DEBUG=1`: enables verbose logging if `showVerboseLogs: true` in settings
-- `language_server_initialization_options()`: sends product metadata and merges user settings
+- `language_server_initialization_options()`: sends product metadata, extracts connections from settings, and merges user init options
 - `language_server_workspace_configuration()`: forwards user settings to language server
 
 ### `wrapper/sonarlint-wrapper.js` (Node.js proxy)
@@ -73,10 +73,21 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 - `sonarlint/filterOutExcludedFiles` → passes through (no filtering)
 - `sonarlint/getJavaConfig` → `null` (no special Java project config)
 - `sonarlint/canShowMissingRequirementsNotification` → `"silently"` (suppress popups)
-- `workspace/configuration` → returns stored config or defaults
+- `sonarlint/getTokenForServer` → returns token from stored connection config (Connected Mode)
+- `sonarlint/checkConnection` → success if connections configured, failure otherwise
+- `workspace/configuration` → returns stored config merged with defaults (tokens stripped)
+
+**Connected Mode notifications handled:**
+- `sonarlint/suggestBinding` → logs binding suggestions with config instructions
+- `sonarlint/suggestConnection` → logs connection suggestions
+- `sonarlint/notifyInvalidToken` → shows error message to user
+- `sonarlint/reportConnectionCheckResult` → logs status, shows warning on failure
+- `sonarlint/openConnectionSettings` → shows config instructions
+- `sonarlint/removeBindingsForDeletedConnections` → logs cleanup request
+- `sonarlint/setReferenceBranchNameForFolder` → logs reference branch
 
 **Custom notifications silently dropped:**
-- `sonarlint/submitNewCodeDefinition`, `sonarlint/embeddedServerStarted`, `sonarlint/settingsApplied`, `sonarlint/suggestBinding`, `sonarlint/suggestConnection`, etc.
+- `sonarlint/submitNewCodeDefinition`, `sonarlint/embeddedServerStarted`, `sonarlint/settingsApplied`, etc.
 
 **Path resolution:**
 - Uses `findExtensionWorkDir()` to locate Zed's extension work directory on disk
@@ -136,6 +147,38 @@ Zed ↔ node (wrapper) ↔ java (sonarlint-ls)
 ```
 
 **Connected Mode (SonarQube/SonarCloud):**
-- Not currently supported
-- Would require additional custom LSP methods for authentication, project binding, etc.
-- Could be added by extending the wrapper to handle connection-related requests
+- Phase 1 supported: basic connection + project binding via settings.json
+- User configures connections and binding in Zed settings:
+  ```json
+  {
+    "lsp": {
+      "sonarlint": {
+        "settings": {
+          "connectedMode": {
+            "connections": {
+              "sonarqube": [{
+                "connectionId": "my-server",
+                "serverUrl": "https://sonarqube.example.com",
+                "token": "squ_xxxx"
+              }]
+            },
+            "project": {
+              "connectionId": "my-server",
+              "projectKey": "my-project"
+            }
+          }
+        }
+      }
+    }
+  }
+  ```
+- Connections are passed to the LS via `initializationOptions` at startup
+- Tokens are served via `sonarlint/getTokenForServer` (tokens stripped from config responses)
+- Binding is communicated via `workspace/configuration` and `sonarlint/addedManualBindings`
+- Per-project binding via three methods (priority order):
+  1. Explicit `connectedMode.project` in settings (global or `.zed/settings.json`)
+  2. `.sonarlint/connectedMode.json` in project root (auto-matched to configured connections)
+  3. LS auto-discovery via `sonarlint/suggestBinding`
+- The `listFilesInFolder` handler exposes `.sonarlint/` directories so the LS can discover shared configs
+- No interactive UI for connection setup (Zed limitation) — settings files only
+- Phase 2 (token generation wizard, auto-bind) and Phase 3 (branch awareness) not yet implemented
