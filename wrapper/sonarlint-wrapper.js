@@ -374,6 +374,31 @@ let serverInitialized = false; // Whether the LS has been initialized
 let sharedConfigs = {}; // folderUri → parsed .sonarlint/connectedMode.json
 let bindingNotificationSent = false; // Only send addedManualBindings once
 
+// ─── Focus on New Code helpers ───────────────────────────────────────────────
+
+function isFocusOnNewCodeEnabled() {
+  if (!storedConfig) return false;
+  // storedConfig may be the sonarlint settings directly (from Zed)
+  // or wrapped under a "sonarlint" key (from didChangeConfiguration with nested settings)
+  if (storedConfig.focusOnNewCode !== undefined) {
+    return storedConfig.focusOnNewCode === true;
+  }
+  if (storedConfig.sonarlint?.focusOnNewCode !== undefined) {
+    return storedConfig.sonarlint.focusOnNewCode === true;
+  }
+  return false;
+}
+
+function filterNewCodeDiagnostics(diagnostics) {
+  if (!Array.isArray(diagnostics)) return diagnostics;
+  return diagnostics.filter(d => {
+    if (d.data == null || d.data.isOnNewCode === undefined) {
+      return true; // Keep diagnostics without the field
+    }
+    return d.data.isOnNewCode === true;
+  });
+}
+
 // ─── Connected Mode helpers ──────────────────────────────────────────────────
 
 /**
@@ -684,6 +709,11 @@ new LspMessageReader(serverProcess.stdout, (msg) => {
       log("Dropping notification:", msg.method);
       return;
     }
+  }
+
+  if (msg.method === "textDocument/publishDiagnostics" && isFocusOnNewCodeEnabled()) {
+    msg.params.diagnostics = filterNewCodeDiagnostics(msg.params.diagnostics);
+    log("Filtered diagnostics for focusOnNewCode:", msg.params.diagnostics.length, "remaining for", msg.params.uri);
   }
 
   if (msg.method) {
