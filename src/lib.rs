@@ -245,7 +245,9 @@ impl zed::Extension for SonarLintExtension {
             "connectedModeEmbedded": {
                 "shouldManageServerLifetime": false
             },
-            "additionalAttributes": {}
+            "additionalAttributes": {},
+            "focusOnNewCode": false,
+            "automaticAnalysis": true
         });
 
         // Extract connections from workspace settings for initializationOptions.
@@ -257,6 +259,13 @@ impl zed::Extension for SonarLintExtension {
                 .and_then(|cm| cm.get("connections"))
             {
                 options["connections"] = connections.clone();
+            }
+
+            if let Some(focus) = settings.get("focusOnNewCode") {
+                options["focusOnNewCode"] = focus.clone();
+            }
+            if let Some(auto_analysis) = settings.get("automaticAnalysis") {
+                options["automaticAnalysis"] = auto_analysis.clone();
             }
         }
 
