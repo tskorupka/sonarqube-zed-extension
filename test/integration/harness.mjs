@@ -165,6 +165,14 @@ export class LspTestClient {
     throw new Error(`No '${method}' notification received within ${timeoutMs}ms`);
   }
 
+  async waitForDiagnosticsSettled(uri, timeoutMs = 15000) {
+    try {
+      return await this.waitForDiagnostics(uri, timeoutMs);
+    } catch {
+      return null; // timeout — no diagnostics
+    }
+  }
+
   clearDiagnostics(uri) {
     this._notifications = this._notifications.filter(
       (n) =>
