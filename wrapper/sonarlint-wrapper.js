@@ -834,6 +834,7 @@ function handleServerRequest(msg) {
 
       const sonarlintDefaults = {
         automaticAnalysis: true,
+        focusOnNewCode: false,
         rules: {},
         disableTelemetry: true,
         output: { showVerboseLogs: false },
