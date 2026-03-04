@@ -166,6 +166,24 @@ node --test test/integration/sonarlint.integration.test.mjs
 - The wrapper is embedded via `include_str!()` in `lib.rs` and written to disk at runtime
 - Changes require reinstalling the dev extension
 
+## Changelog & Versioning
+
+**Changelog:**
+- Lives at `CHANGELOG.md` in the repository root
+- Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
+- Update in the same PR that introduces user-facing changes, under `## [Unreleased]`
+- Use categories: **Added**, **Changed**, **Fixed**, **Removed** (only as needed)
+- Internal refactors and test-only changes do not need changelog entries
+
+**Release process:**
+1. Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
+2. Add a fresh `## [Unreleased]` section above it
+3. Update `version` in `extension.toml` and `Cargo.toml` to match
+
+**Versioning:**
+- The extension version (`extension.toml` / `Cargo.toml`) is independent of `SONARLINT_VERSION` (the upstream language server version)
+- Follows [Semantic Versioning](https://semver.org/): MAJOR for breaking config changes, MINOR for new features, PATCH for bug fixes and dependency bumps
+
 ## Architecture Notes
 
 **Why a Node.js wrapper?**
