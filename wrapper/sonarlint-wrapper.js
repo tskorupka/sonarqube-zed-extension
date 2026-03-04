@@ -833,6 +833,7 @@ function handleServerRequest(msg) {
       log("→ workspace/configuration:", JSON.stringify(params));
 
       const sonarlintDefaults = {
+        automaticAnalysis: true,
         rules: {},
         disableTelemetry: true,
         output: { showVerboseLogs: false },
