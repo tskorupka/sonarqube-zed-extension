@@ -35,6 +35,23 @@ cargo build --release
 4. Select this repository directory
 
 ### Testing
+
+**Integration tests (run before committing):**
+```bash
+node --test test/integration/sonarlint.integration.test.mjs
+```
+
+Prerequisites:
+- **Java 17+** in PATH or `JAVA_HOME`
+- **SonarLint JARs** must be downloaded — run the extension in Zed at least once (open any supported file to trigger download)
+- Tests auto-skip with a message if Java or JARs are not found
+
+Enable debug output with `TEST_DEBUG=1`:
+```bash
+TEST_DEBUG=1 node --test test/integration/sonarlint.integration.test.mjs
+```
+
+**Manual testing:**
 Open a supported file (e.g., `.java`, `.ts`, `.py`) in Zed to trigger the extension.
 
 **View logs:**
@@ -42,7 +59,10 @@ Open a supported file (e.g., `.java`, `.ts`, `.py`) in Zed to trigger the extens
 # Zed extension log: Command Palette -> "zed: open log"
 
 # Wrapper log (custom requests, file listing, etc.):
-tail -f ~/sonarlint-wrapper.log
+# macOS:
+tail -f ~/Library/Application\ Support/Zed/extensions/work/sonarlint/sonarlint-wrapper.log
+# Linux:
+tail -f ~/.local/share/zed/extensions/work/sonarlint/sonarlint-wrapper.log
 
 # Run Zed from terminal for verbose output:
 zed --foreground
@@ -60,7 +80,7 @@ zed --foreground
   - `SONARLINT_ANALYZER_PATHS`: pipe-separated list of analyzer JARs
   - `JAVA_HOME`: forwarded from shell environment
   - `SONARLINT_DEBUG=1`: enables verbose logging if `showVerboseLogs: true` in settings
-- `language_server_initialization_options()`: sends product metadata, extracts connections from settings, and merges user init options
+- `language_server_initialization_options()`: sends product metadata (`productKey`, `productName`, `productVersion`), default settings (`focusOnNewCode: false`, `automaticAnalysis: true`, `disableTelemetry: true`), extracts connections from workspace settings, reads user overrides for `focusOnNewCode` and `automaticAnalysis` from settings, and merges any user-provided `initializationOptions` (which take final precedence)
 - `language_server_workspace_configuration()`: forwards user settings to language server
 
 ### `wrapper/sonarlint-wrapper.js` (Node.js proxy)
@@ -75,7 +95,7 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 - `sonarlint/canShowMissingRequirementsNotification` → `"silently"` (suppress popups)
 - `sonarlint/getTokenForServer` → returns token from stored connection config (Connected Mode)
 - `sonarlint/checkConnection` → success if connections configured, failure otherwise
-- `workspace/configuration` → returns stored config merged with defaults (tokens stripped)
+- `workspace/configuration` → returns stored config merged with defaults (`automaticAnalysis: true`, `focusOnNewCode: false`, etc.), tokens stripped from response
 
 **Connected Mode notifications handled:**
 - `sonarlint/suggestBinding` → logs binding suggestions with config instructions
@@ -98,6 +118,11 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 - `extension.toml`: extension metadata, language support, LSP server registration
 - `Cargo.toml`: Rust dependencies (`zed_extension_api = "0.7.0"`, `const_format`)
 
+### `test/integration/` (integration tests)
+- **`harness.mjs`**: Test infrastructure — `LspTestClient` class (LSP JSON-RPC over stdin/stdout), `findJava()` (JAVA_HOME then PATH), `findSonarLintJars()` (env var override or Zed work directory discovery). The client handles Content-Length framing, request/response matching with timeouts, auto-responds to `client/registerCapability`, `workspace/configuration`, and `window/showMessageRequest`.
+- **`sonarlint.integration.test.mjs`**: Tests using `node:test` framework. Starts wrapper + real `sonarlint-ls` JVM in `before()`, sends `initialize` → `initialized` → `didChangeConfiguration`, then opens test fixture files and asserts diagnostics are returned. Currently tests JS, Java, and Python.
+- Test fixtures live in `test/` (e.g., `example.js`, `example.java`, `example.py`)
+
 ## Important Constants
 
 **In `src/lib.rs`:**
@@ -119,7 +144,7 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 2. Verify the analyzer JAR is included in the VSIX (check upstream SonarLint VS Code extension)
 
 **Debug wrapper issues:**
-1. Check `~/sonarlint-wrapper.log` for custom request handling
+1. Check wrapper log for custom request handling (macOS: `~/Library/Application Support/Zed/extensions/work/sonarlint/sonarlint-wrapper.log`, Linux: `~/.local/share/zed/extensions/work/sonarlint/sonarlint-wrapper.log`)
 2. Look for path resolution errors or missing JARs
 3. Verify Node.js is in PATH: `which node`
 
@@ -127,6 +152,14 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 1. Check Zed log (`zed: open log` command)
 2. Verify `sonarlint-{VERSION}/extension/server/sonarlint-ls.jar` exists
 3. Verify analyzer JARs in `sonarlint-{VERSION}/extension/analyzers/`
+
+**Run integration tests:**
+```bash
+node --test test/integration/sonarlint.integration.test.mjs
+```
+- Requires Java 17+ and JARs downloaded (run extension in Zed once)
+- Tests auto-skip if prerequisites missing
+- Use `TEST_DEBUG=1` for verbose wrapper stderr output
 
 **Modify custom request handling:**
 - Edit `wrapper/sonarlint-wrapper.js` → `handleServerRequest()` function
@@ -145,6 +178,13 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 Zed ↔ node (wrapper) ↔ java (sonarlint-ls)
       stdin/stdout       stdin/stdout
 ```
+
+**Settings dual-path:**
+- `focusOnNewCode` and `automaticAnalysis` are passed via BOTH paths:
+  1. `initializationOptions` at startup (lib.rs defaults + user overrides from settings)
+  2. `workspace/configuration` at runtime (wrapper defaults + stored config)
+- The LS reads these at startup from initializationOptions AND re-reads via workspace/configuration when settings change
+- User overrides in Zed settings flow: `settings.json` → lib.rs reads and injects into initializationOptions → wrapper serves via workspace/configuration with defaults merged
 
 **Connected Mode (SonarQube/SonarCloud):**
 - Phase 1 supported: basic connection + project binding via settings.json
