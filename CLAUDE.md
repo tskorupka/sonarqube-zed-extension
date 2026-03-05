@@ -109,12 +109,6 @@ The wrapper sits between Zed and `sonarlint-ls`, handling custom LSP extensions:
 **Custom notifications silently dropped:**
 - `sonarlint/submitNewCodeDefinition`, `sonarlint/embeddedServerStarted`, `sonarlint/settingsApplied`, etc.
 
-**Severity remapping:**
-- `remapDiagnosticSeverities()` rewrites diagnostic severities before forwarding to Zed
-- Uses SonarLint's Clean Code `impactSeverity` field (`d.data.impactSeverity`) instead of the default LSP severity
-- Mapping: BLOCKER(4)/HIGH(3) → Error(1), MEDIUM(2) → Warning(2), LOW(1) → Information(3), INFO(0) → Hint(4)
-- Diagnostics without `impactSeverity` data retain their original severity
-
 **Path resolution:**
 - Uses `findExtensionWorkDir()` to locate Zed's extension work directory on disk
 - Resolves relative JAR paths from environment variables to absolute paths
