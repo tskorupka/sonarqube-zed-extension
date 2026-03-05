@@ -175,14 +175,59 @@ node --test test/integration/sonarlint.integration.test.mjs
 - Use categories: **Added**, **Changed**, **Fixed**, **Removed** (only as needed)
 - Internal refactors and test-only changes do not need changelog entries
 
-**Release process:**
-1. Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
-2. Add a fresh `## [Unreleased]` section above it
-3. Update `version` in `extension.toml` and `Cargo.toml` to match
-
 **Versioning:**
 - The extension version (`extension.toml` / `Cargo.toml`) is independent of `SONARLINT_VERSION` (the upstream language server version)
 - Follows [Semantic Versioning](https://semver.org/): MAJOR for breaking config changes, MINOR for new features, PATCH for bug fixes and dependency bumps
+
+**Release process:**
+
+1. **Create a release branch** from `master`:
+   ```bash
+   git checkout master && git pull
+   git checkout -b release/X.Y.Z
+   ```
+
+2. **Update version numbers** in both files to the new version:
+   - `extension.toml`: `version = "X.Y.Z"`
+   - `Cargo.toml`: `version = "X.Y.Z"`
+
+3. **Finalize the changelog** in `CHANGELOG.md`:
+   - Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
+   - Add a fresh empty `## [Unreleased]` section above it
+   - Review entries for clarity and completeness
+
+4. **Verify the build and tests pass:**
+   ```bash
+   cargo build --release
+   node --test test/integration/sonarlint.integration.test.mjs
+   ```
+
+5. **Open a PR** from the release branch to `master`:
+   - Title: `release: vX.Y.Z`
+   - Body should include the changelog entries for this version
+   - Get review approval before merging
+
+6. **Merge the PR** into `master`.
+
+7. **Tag the release** on `master`:
+   ```bash
+   git checkout master && git pull
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+8. **Create a GitHub release** from the tag:
+   - Use tag `vX.Y.Z`
+   - Title: `vX.Y.Z`
+   - Copy the changelog entries for this version into the release notes
+
+9. **Publish to Zed extension registry** (if applicable):
+   - Follow Zed's extension publishing process after the tag is pushed
+
+**Post-release checklist:**
+- Verify the GitHub release is visible and notes are correct
+- Confirm the `## [Unreleased]` section in `CHANGELOG.md` on `master` is empty and ready for the next cycle
+- If publishing to the Zed registry, verify the new version is listed
 
 ## Architecture Notes
 
