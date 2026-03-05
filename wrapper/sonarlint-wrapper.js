@@ -399,6 +399,39 @@ function filterNewCodeDiagnostics(diagnostics) {
   });
 }
 
+/**
+ * Remap diagnostic severities based on Clean Code impact severity.
+ * SonarLint sends impact severity in d.data.impactSeverity as a numeric enum:
+ *   4=BLOCKER, 3=HIGH, 2=MEDIUM, 1=LOW, 0=INFO
+ * We map these to LSP DiagnosticSeverity:
+ *   1=Error, 2=Warning, 3=Information, 4=Hint
+ */
+function remapDiagnosticSeverities(diagnostics) {
+  if (!Array.isArray(diagnostics)) return diagnostics;
+  for (const d of diagnostics) {
+    if (d.data != null && typeof d.data.impactSeverity === 'number') {
+      switch (d.data.impactSeverity) {
+        case 4: // BLOCKER
+        case 3: // HIGH
+          d.severity = 1; // Error
+          break;
+        case 2: // MEDIUM
+          d.severity = 2; // Warning
+          break;
+        case 1: // LOW
+          d.severity = 3; // Information
+          break;
+        case 0: // INFO
+          d.severity = 4; // Hint
+          break;
+        // default: leave severity unchanged
+      }
+    }
+    // If no impactSeverity data, leave original severity untouched
+  }
+  return diagnostics;
+}
+
 // ─── Connected Mode helpers ──────────────────────────────────────────────────
 
 /**
@@ -711,9 +744,12 @@ new LspMessageReader(serverProcess.stdout, (msg) => {
     }
   }
 
-  if (msg.method === "textDocument/publishDiagnostics" && isFocusOnNewCodeEnabled()) {
-    msg.params.diagnostics = filterNewCodeDiagnostics(msg.params.diagnostics);
-    log("Filtered diagnostics for focusOnNewCode:", msg.params.diagnostics.length, "remaining for", msg.params.uri);
+  if (msg.method === "textDocument/publishDiagnostics" && msg.params) {
+    remapDiagnosticSeverities(msg.params.diagnostics);
+    if (isFocusOnNewCodeEnabled()) {
+      msg.params.diagnostics = filterNewCodeDiagnostics(msg.params.diagnostics);
+      log("Filtered diagnostics for focusOnNewCode:", msg.params.diagnostics.length, "remaining for", msg.params.uri);
+    }
   }
 
   if (msg.method) {

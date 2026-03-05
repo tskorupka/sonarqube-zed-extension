@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Remap diagnostic severities based on Clean Code impact severity instead of using raw SonarLint rule severities
+
 ## [0.1.0] - 2026-03-04
 
 ### Added
