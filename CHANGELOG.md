@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Support for JVM arguments via `sonarlint.ls.vmargs` setting (e.g., `-Xmx2048m` for increased heap memory or `-agentlib:jdwp=...` for remote debugging)
+
 ### Changed
 - Remap diagnostic severities based on Clean Code impact severity instead of using raw SonarLint rule severities
 

@@ -158,6 +158,7 @@ const RAW_ANALYZERS = (
   .filter(Boolean);
 const JAVA_HOME = process.env.JAVA_HOME || "";
 const DEBUG = process.env.SONARLINT_DEBUG === "1";
+const VM_ARGS = process.env.SONARLINT_VM_ARGS || "";
 
 if (!RAW_SERVER_JAR) {
   process.stderr.write(
@@ -327,7 +328,54 @@ function listFilesInFolder(folderUri) {
 
 // ─── Spawn SonarLint Language Server ─────────────────────────────────────────
 
-const javaArgs = ["-Xmx1024m", "-Xms128m", "-jar", SERVER_JAR, "-stdio"];
+/**
+ * Parse VM arguments string into an array, respecting quoted strings.
+ * Example: '-Xmx1024m -Dfoo="bar baz"' → ['-Xmx1024m', '-Dfoo=bar baz']
+ */
+function parseVmArgs(argsString) {
+  if (!argsString || !argsString.trim()) {
+    return [];
+  }
+  const args = [];
+  let current = "";
+  let inQuote = false;
+  let quoteChar = "";
+
+  for (let i = 0; i < argsString.length; i++) {
+    const char = argsString[i];
+    if (!inQuote && (char === '"' || char === "'")) {
+      inQuote = true;
+      quoteChar = char;
+    } else if (inQuote && char === quoteChar) {
+      inQuote = false;
+      quoteChar = "";
+    } else if (!inQuote && char === " ") {
+      if (current.trim()) {
+        args.push(current.trim());
+      }
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  if (current.trim()) {
+    args.push(current.trim());
+  }
+  return args;
+}
+
+// Use user-provided VM args or fall back to defaults
+const defaultVmArgs = ["-Xmx1024m", "-Xms128m"];
+const userVmArgs = parseVmArgs(VM_ARGS);
+const vmArgs = userVmArgs.length > 0 ? userVmArgs : defaultVmArgs;
+
+if (userVmArgs.length > 0) {
+  log("Using custom VM args:", vmArgs.join(" "));
+} else {
+  log("Using default VM args:", vmArgs.join(" "));
+}
+
+const javaArgs = [...vmArgs, "-jar", SERVER_JAR, "-stdio"];
 
 if (ANALYZERS.length > 0) {
   javaArgs.push("-analyzers");
