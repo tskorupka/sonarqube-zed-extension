@@ -204,6 +204,14 @@ impl zed::Extension for SonarLintExtension {
                     env.push(("SONARLINT_DEBUG".to_string(), "1".to_string()));
                 }
             }
+            // Read VM args from settings (sonarlint.ls.vmargs)
+            if let Some(ref ws_settings) = settings.settings {
+                if let Some(ls_obj) = ws_settings.get("ls") {
+                    if let Some(vmargs) = ls_obj.get("vmargs").and_then(|v| v.as_str()) {
+                        env.push(("SONARLINT_VM_ARGS".to_string(), vmargs.to_string()));
+                    }
+                }
+            }
         }
 
         Ok(zed::Command {
