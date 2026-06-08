@@ -23,8 +23,8 @@ use zed_extension_api::{
 };
 
 const SONARLINT_VSCODE_REPO: &str = "SonarSource/sonarlint-vscode";
-const SONARLINT_VERSION: &str = "4.42.0";
-const SONARLINT_TAG: &str = concatcp!(SONARLINT_VERSION, "+79846");
+const SONARLINT_VERSION: &str = "5.3.0";
+const SONARLINT_TAG: &str = concatcp!(SONARLINT_VERSION, "+80328");
 const SONARLINT_ASSET_NAME: &str = concatcp!("sonarlint-vscode-", SONARLINT_VERSION, ".vsix");
 
 const SERVER_NAME: &str = "sonarlint-ls.jar";

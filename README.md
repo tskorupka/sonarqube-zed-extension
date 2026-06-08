@@ -273,7 +273,7 @@ See [CLAUDE.md](./CLAUDE.md) for detailed architecture documentation and develop
 ### Build the extension
 
 ```bash
-cargo build --release
+cargo build --release --target wasm32-wasip2
 ```
 
 ### Prerequisites for development

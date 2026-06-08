@@ -620,25 +620,31 @@ function findSharedConfigForScope(scopeUri) {
 
 /**
  * Qualify a project key for SonarCloud connections.
- * SonarCloud project keys must be in the format "<organizationKey>_<projectKey>".
- * If the connection is SonarCloud and the project key doesn't already have the org prefix,
- * prepend it automatically.
- * Returns the (possibly prefixed) project key.
+ *
+ * Some SonarCloud projects use keys in the format "<organizationKey>_<projectKey>".
+ * To preserve compatibility with that convention, bare SonarCloud project keys
+ * are prefixed with the matching organization key.
+ *
+ * Project keys that already contain "_" are assumed to already be exact keys or
+ * underscore-separated keys and are left unchanged.
  */
 function qualifyProjectKey(connectionId, projectKey) {
   if (!connectionId || !projectKey) return projectKey;
+
+  if (projectKey.includes("_")) {
+    log(
+      `SonarCloud project key already contains "_"; leaving unchanged: "${projectKey}"`,
+    );
+    return projectKey;
+  }
 
   // Find the matching SonarCloud connection
   for (const conn of connectionConfigs.sonarcloud || []) {
     const connId = conn.connectionId || conn.organizationKey;
     if (connId === connectionId && conn.organizationKey) {
-      const prefix = conn.organizationKey + "_";
-      if (!projectKey.startsWith(prefix)) {
-        const qualified = prefix + projectKey;
-        log(`Qualified SonarCloud project key: "${projectKey}" → "${qualified}"`);
-        return qualified;
-      }
-      break;
+      const qualified = conn.organizationKey + "_" + projectKey;
+      log(`Qualified SonarCloud project key: "${projectKey}" → "${qualified}"`);
+      return qualified;
     }
   }
 
